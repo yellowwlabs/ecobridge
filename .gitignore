@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Backend build output & generated fine-tuning dataset
+backend/dist
+backend/data/*.jsonl
+
+# Turbo
+.turbo
+
+.omc
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Binary ML model artifacts
+model/models/*.pkl

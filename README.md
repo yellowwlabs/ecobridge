@@ -14,33 +14,65 @@ EcoBridge is a smart recycling platform that connects informal scrap collectors 
 ## Getting Started
 
 ```bash
-pnpm install
+make install              # pnpm install across the workspace
 cp .env.example .env      # then fill in DATABASE_URL and JWT_SECRET
-pnpm db:migrate           # applies schema.sql + seed.sql (idempotent)
-
-pnpm server               # API on :3001 (tsx watch)
-pnpm dev                  # web app on :5173, proxies /api -> :3001
+make db-migrate           # applies schema.sql + seed.sql (idempotent)
+make dev                  # frontend :5173 + backend :3001, together
 ```
 
+To load the synthetic collection dataset (7,500 rows across 60 pickup points)
+from `model/__data__/`:
+
+```bash
+pnpm --filter @ecobridge/backend db:import-collections
+```
+
+`make` with no target lists everything available.
+
 `DATABASE_URL` points at any PostgreSQL 14+ instance — local, Docker, or a
-managed provider (set `DATABASE_SSL=true` for the latter). Migrations also run
-automatically on server boot, so `pnpm db:migrate` is only needed to seed
+managed provider (either `DATABASE_SSL=true` or `?sslmode=require` in the URL).
+Migrations also run
+automatically on server boot, so `make db-migrate` is only needed to seed
 without starting the API.
 
-### Scripts
+### Make targets
 
-| Script | Purpose |
+| Target | Purpose |
 | --- | --- |
-| `pnpm dev` | Vite dev server |
-| `pnpm build` | Production frontend build |
-| `pnpm server` | Backend in watch mode |
-| `pnpm server:build` | Compile backend to `backend/dist` |
-| `pnpm server:start` | Run the compiled backend |
-| `pnpm db:migrate` | Apply schema and seed data |
-| `pnpm typecheck` | Type-check the backend |
-| `pnpm lint` | oxlint |
+| `make dev` | Run frontend and backend together |
+| `make dev-web` / `make dev-api` | Run one side only |
+| `make build` | Build every workspace |
+| `make build-web` / `make build-api` | Build one side only |
+| `make start` | Run the compiled backend |
+| `make lint` / `make typecheck` / `make check` | Quality gates |
+| `make db-migrate` | Apply schema and seed data |
+| `make android` | Build the frontend and `cap sync android` |
+| `make clean` | Remove build output and the Turbo cache |
 
-## Backend Structure
+Every target delegates to Turbo or `pnpm --filter`, so `pnpm turbo run build`
+and `pnpm --filter @ecobridge/backend dev` work directly too. Turbo caches
+`build` and `typecheck`; `dev` and `db:migrate` are never cached.
+
+## Repository Layout
+
+This is a pnpm workspace orchestrated by Turborepo, with a Makefile as the
+entry point.
+
+```
+.
+├── frontend/               # React + Vite app (@ecobridge/frontend)
+│   ├── index.html
+│   ├── public/
+│   ├── src/
+│   └── vite.config.js      # dev proxy: /api -> localhost:3001
+├── backend/                # Express + PostgreSQL API (@ecobridge/backend)
+├── android/                # Capacitor native shell
+├── capacitor.config.json   # webDir -> frontend/dist
+├── turbo.json
+└── Makefile
+```
+
+### Backend
 
 ```
 backend/

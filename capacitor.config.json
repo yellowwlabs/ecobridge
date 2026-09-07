@@ -1,0 +1,9 @@
+{
+  "appId": "com.ecobridge.app",
+  "appName": "EcoBridge",
+  "webDir": "frontend/dist",
+  "server": {
+    "url": "http://10.10.135.213:5173",
+    "cleartext": true
+  }
+}
