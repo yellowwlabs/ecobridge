@@ -31,6 +31,10 @@ export const env = {
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
   geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.6-flash',
 
+  // Flask service in model/ (`uv run python -m src.api.api`). Optional: the
+  // agent falls back to price-board arithmetic when it is unreachable.
+  modelApiUrl: process.env.MODEL_API_URL ?? 'http://127.0.0.1:5002',
+
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000),
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 50)
 } as const;

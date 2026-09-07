@@ -14,15 +14,34 @@ export interface GeminiFailure {
 }
 export type GeminiResult = GeminiSuccess | GeminiFailure;
 
-interface GeminiResponse {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+export interface GeminiPart {
+  text?: string;
+  functionCall?: { name: string; args?: Record<string, unknown> };
+  // Gemini 3 rejects a tool-calling turn whose functionCall parts are replayed
+  // without the signature it issued, so parts must be echoed back verbatim.
+  thoughtSignature?: string;
 }
 
-/** Call Gemini, falling back through known-good models if the primary errors. */
-export async function executeGeminiRequest(
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+}
+
+export interface GeminiPartsSuccess {
+  success: true;
+  parts: GeminiPart[];
+  model: string;
+}
+export type GeminiPartsResult = GeminiPartsSuccess | GeminiFailure;
+
+/**
+ * Call Gemini, falling back through known-good models if the primary errors.
+ * Returns every part of the reply, so callers that use function calling can
+ * read `functionCall` parts as well as text.
+ */
+export async function executeGeminiParts(
   payload: unknown,
   primaryModel: string = env.geminiModel
-): Promise<GeminiResult> {
+): Promise<GeminiPartsResult> {
   if (!env.geminiApiKey) {
     return { success: false, error: 'GEMINI_API_KEY is not configured' };
   }
@@ -45,14 +64,28 @@ export async function executeGeminiRequest(
       }
 
       const data = (await response.json()) as GeminiResponse;
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return { success: true, text, model, raw: data };
+      const parts = data.candidates?.[0]?.content?.parts;
+      if (parts?.length) return { success: true, parts, model };
     } catch (err) {
       console.error(`[Gemini Proxy] Model ${model} failed:`, err instanceof Error ? err.message : err);
     }
   }
 
   return { success: false, error: 'All Gemini model endpoint attempts failed' };
+}
+
+/** Text-only convenience wrapper for the non-agentic endpoints. */
+export async function executeGeminiRequest(
+  payload: unknown,
+  primaryModel: string = env.geminiModel
+): Promise<GeminiResult> {
+  const result = await executeGeminiParts(payload, primaryModel);
+  if (!result.success) return result;
+
+  const text = result.parts.map((p) => p.text).find((t) => t);
+  if (!text) return { success: false, error: 'Gemini returned no text content' };
+
+  return { success: true, text, model: result.model, raw: result.parts };
 }
 
 /**

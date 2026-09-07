@@ -1,13 +1,75 @@
 import { Router } from 'express';
+import { authMiddleware } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/error.js';
 import { rateLimiter } from '../middleware/rateLimit.js';
 import { dbAll } from '../db/pool.js';
 import { env } from '../config/env.js';
 import { buildPriceBoardSystemContext, executeGeminiRequest } from '../services/gemini.js';
+import { runAgent, type AgentTurn, type PendingAction } from '../services/agent.js';
 import { appendSlmDataset } from '../services/slmDataset.js';
 import type { Lang, MaterialCategory } from '../types/index.js';
 
 export const aiRouter = Router();
+
+const MAX_HISTORY_TURNS = 20;
+
+aiRouter.post(
+  '/ai/agent',
+  authMiddleware,
+  rateLimiter,
+  asyncHandler(async (req, res) => {
+    const { messages, lang = 'hi', approvedAction } = req.body as {
+      messages?: AgentTurn[];
+      lang?: Lang;
+      approvedAction?: PendingAction | null;
+    };
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ error: 'messages array is required' });
+      return;
+    }
+
+    const history = messages
+      .filter((m) => (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
+      .slice(-MAX_HISTORY_TURNS);
+
+    if (history.length === 0) {
+      res.status(400).json({ error: 'messages must contain at least one non-empty user or model turn' });
+      return;
+    }
+
+    const result = await runAgent(history, { user: req.user!, lang }, approvedAction ?? null);
+
+    if (result.degraded || (!result.reply && !result.pendingAction)) {
+      const fallback =
+        lang === 'en'
+          ? 'AI Assistant is temporarily unavailable — please try again in a moment.'
+          : lang === 'mr'
+            ? 'एआय सहाय्यक सध्या व्यस्त आहे. कृपया थोड्या वेळाने प्रयत्न करा.'
+            : 'एआई सहायक अभी व्यस्त है — कृपया थोड़ी देर में पुनः प्रयास करें।';
+
+      res.json({ success: true, reply: fallback, steps: result.steps, pendingAction: null, fallback: true });
+      return;
+    }
+
+    appendSlmDataset({
+      input_prompt: history[history.length - 1]?.text ?? '',
+      output_response: result.reply,
+      context_category: result.steps.length ? `agent:${result.steps.map((s) => s.tool).join('+')}` : 'agent:direct',
+      language: lang,
+      price_grounding_used: true
+    });
+
+    res.json({
+      success: true,
+      reply: result.reply,
+      steps: result.steps,
+      pendingAction: result.pendingAction,
+      model: result.model,
+      fallback: false
+    });
+  })
+);
 
 type CategoryLite = Pick<MaterialCategory, 'id' | 'name_en' | 'name_hi' | 'name_mr' | 'rate_per_kg'>;
 

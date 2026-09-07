@@ -99,6 +99,12 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ prompt, lang, context })
   }),
+  // Agentic assistant: multi-turn, calls backend tools + the ML valuation model.
+  // `approvedAction` replays a write the user confirmed.
+  agentChat: (messages, lang = 'hi', approvedAction = null) => request('/ai/agent', {
+    method: 'POST',
+    body: JSON.stringify({ messages, lang, approvedAction })
+  }),
   scanPhotoMultimodal: (photoData, lang = 'hi') => request('/ai/scan', {
     method: 'POST',
     body: JSON.stringify(typeof photoData === 'object' ? photoData : { photoUrl: photoData, lang })

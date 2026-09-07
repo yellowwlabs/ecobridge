@@ -5,42 +5,44 @@ import { useAppData } from '../../context/AppDataContext';
 import { Mic, X, Send, Sparkles, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { speakText, stopSpeaking } from '../../utils/voiceAssistant';
 import { api } from '../../utils/apiClient';
+import { useAgent } from '../../hooks/useAgent';
+import { AgentConfirm, AgentSteps } from '../ai/AgentTrace';
 
 export default function VoiceModal() {
-  const { lang, t } = useLanguage();
+  const { lang } = useLanguage();
   const { voiceModalOpen, setVoiceModalOpen, activeTx } = useAppData();
 
   const [aiInputText, setAiInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  
+
+  const {
+    messages: aiMessages,
+    isThinking: isAiProcessing,
+    pendingAction,
+    send,
+    approve,
+    decline,
+    reset
+  } = useAgent(lang);
+
   const messagesEndRef = useRef(null);
 
   const getGreetingText = () => {
     if (lang === 'hi') {
-      return 'नमस्ते! मैं आपका इकोब्रिज एआई असिस्टेंट हूँ। तांबे का भाव, बैटरी सुरक्षा, या कबाड़ स्कैन करने के लिए बोलें या टैप करें।';
+      return 'नमस्ते! मैं आपका इकोब्रिज एआई असिस्टेंट हूँ। भाव पूछें, कबाड़ का वजन बताकर कीमत लगवाएं, या पिकअप बुक करवाएं — बोलें या टैप करें।';
     } else if (lang === 'mr') {
-      return 'नमस्कार! मी तुमचा इकोब्रिज एआई सहाय्यक आहे. तांब्याचा भाव, बॅटरी सुरक्षा, किंवा कबाड स्कॅन करण्यासाठी बोला किंवा टॅप करा.';
+      return 'नमस्कार! मी तुमचा इकोब्रिज एआय सहाय्यक आहे. दर विचारा, कबाडाचे वजन सांगून किंमत काढा, किंवा पिकअप बुक करा — बोला किंवा टॅप करा.';
     }
-    return 'Hello! I am your EcoBridge AI Assistant. You can ask about copper rates, battery safety, or scan material — just speak or tap!';
+    return 'Hello! I am your EcoBridge AI Assistant. Ask for rates, tell me a weight and I will value the load with our model, or book a pickup — speak or tap.';
   };
-
-  const [aiMessages, setAiMessages] = useState([]);
 
   // Auto greet aloud when modal opens
   useEffect(() => {
     if (voiceModalOpen) {
       const initialGreeting = getGreetingText();
-      setAiMessages([
-        {
-          id: 'msg_welcome',
-          sender: 'ai',
-          text: initialGreeting,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
+      reset(initialGreeting);
 
       // Speak greeting aloud out of the box
       setTimeout(() => {
@@ -64,74 +66,26 @@ export default function VoiceModal() {
     }
   }, [aiMessages, isAiProcessing]);
 
-  /**
-   * Gemini 2.5 Flash Backend Query Integration Point
-   */
-  const callGeminiFlashSLM = async (userPrompt) => {
-    try {
-      const res = await api.queryAi(userPrompt, lang, { lot_id: activeTx?.lot_id });
-      if (res && res.response) {
-        return res.response;
-      }
-      throw new Error('No response returned from AI Proxy');
-    } catch (err) {
-      console.warn('[Gemini 2.5 Flash Proxy Fallback]:', err.message);
-      if (lang === 'hi') {
-        return 'एआई सहायक अभी उपलब्ध नहीं है — कृपया कुछ क्षण बाद पुनः प्रयास करें।';
-      } else if (lang === 'mr') {
-        return 'एआय सहाय्यक सध्या उपलब्ध नाही — कृपया थोड्या वेळाने पुन्हा प्रयत्न करा.';
-      }
-      return 'AI Assistant is temporarily unavailable — try again in a moment.';
-    }
+  /** Speak whatever the agent came back with — voice-first is the point here. */
+  const speakReply = (replyText) => {
+    if (!replyText) return;
+    speakText(replyText, lang);
+    setIsSpeaking(true);
   };
 
-  const handleSendPrompt = async (promptText, spoken = false) => {
+  const handleSendPrompt = async (promptText) => {
     const text = promptText || aiInputText;
     if (!text.trim() || isAiProcessing) return;
 
-    // Stop previous speaking
     stopSpeaking();
-
-    const userMsg = {
-      id: `usr_${Date.now()}`,
-      sender: 'user',
-      text: text.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setAiMessages(prev => [...prev, userMsg]);
     setAiInputText('');
-    setIsAiProcessing(true);
-
-    try {
-      const responseText = await callGeminiFlashSLM(text.trim());
-      const aiMsg = {
-        id: `ai_${Date.now()}`,
-        sender: 'ai',
-        text: responseText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setAiMessages(prev => [...prev, aiMsg]);
-      
-      // Speak audio response aloud automatically (Voice-first principle)
-      speakText(responseText, lang);
-      setIsSpeaking(true);
-    } catch (err) {
-      console.warn('Gemini 2.5 Flash SLM invocation error:', err);
-      const fallbackText = lang === 'hi' 
-        ? 'एआई सहायक अभी उपलब्ध नहीं है — कृपया थोड़ी देर में प्रयास करें।' 
-        : 'AI Assistant is temporarily unavailable — try again in a moment.';
-      setAiMessages(prev => [...prev, {
-        id: `err_${Date.now()}`,
-        sender: 'ai',
-        text: fallbackText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
-    } finally {
-      setIsAiProcessing(false);
-    }
+    speakReply(await send(text));
   };
 
+  const handleApproveAction = async () => {
+    stopSpeaking();
+    speakReply(await approve());
+  };
 
   const handleSuggestionClick = (cmdText) => {
     handleSendPrompt(cmdText);
@@ -157,12 +111,12 @@ export default function VoiceModal() {
       setTimeout(() => {
         setIsListening(false);
         const samplePrompts = lang === 'hi'
-          ? ['आज तांबे का भाव क्या है?', 'बैटरी सुरक्षा के नियम बताओ', 'मुश्किल कबाड़ कैसे बेचें?']
+          ? ['मेरे पास 12 किलो तांबा है, कितने का मिलेगा?', 'आज सबसे ऊंचा भाव किस चीज का है?', 'मेरे कितने पॉइंट जमा हैं?']
           : lang === 'mr'
-          ? ['आज तांब्याचा दर काय आहे?', 'बॅटरी सुरक्षितता सांगा', 'स्क्रॅप कसे विकावे?']
-          : ['What is today copper scrap rate?', 'Battery safety guidelines', 'How to scan scrap?'];
+          ? ['माझ्याकडे 12 किलो तांबे आहे, किती मिळतील?', 'आज सर्वात जास्त दर कशाचा आहे?', 'माझे किती पॉइंट आहेत?']
+          : ['I have 12 kg of copper, what is it worth?', 'Which material pays best today?', 'How many loyalty points do I have?'];
         const chosen = samplePrompts[Math.floor(Math.random() * samplePrompts.length)];
-        handleSendPrompt(chosen, true);
+        handleSendPrompt(chosen);
       }, 2400);
     }
   };
@@ -334,9 +288,34 @@ export default function VoiceModal() {
             scrollSnapType: 'x mandatory'
           }}>
             {[
-              { icon: '💰', label: lang === 'hi' ? 'कॉपर भाव' : lang === 'mr' ? 'तांबे दर' : 'Copper Rates', prompt: t('voiceCmd1') || 'Get Copper Rates' },
-              { icon: '🔋', label: lang === 'hi' ? 'बैटरी सुरक्षा' : lang === 'mr' ? 'बॅटरी नियम' : 'Battery Safety', prompt: t('voiceCmd2') || 'Battery Safety Guidelines' },
-              { icon: '📸', label: lang === 'hi' ? 'फोटो स्कैन' : lang === 'mr' ? 'फोटो स्कॅन' : 'Scan Scrap', prompt: t('voiceCmd3') || 'AI Material Scan' }
+              {
+                icon: '💰',
+                label: lang === 'hi' ? 'आज के भाव' : lang === 'mr' ? 'आजचे दर' : 'Today Rates',
+                prompt: lang === 'hi' ? 'आज सारे भाव बताओ' : lang === 'mr' ? 'आजचे सर्व दर सांगा' : 'Show me all rates today'
+              },
+              {
+                icon: '🧮',
+                label: lang === 'hi' ? 'कीमत लगाओ' : lang === 'mr' ? 'किंमत काढा' : 'Value My Load',
+                prompt: lang === 'hi'
+                  ? 'मेरे पास 10 किलो तांबा है, कितने का मिलेगा?'
+                  : lang === 'mr'
+                    ? 'माझ्याकडे 10 किलो तांबे आहे, किती मिळतील?'
+                    : 'I have 10 kg of copper, what is it worth?'
+              },
+              {
+                icon: '🚚',
+                label: lang === 'hi' ? 'पिकअप बुक' : lang === 'mr' ? 'पिकअप बुक' : 'Book Pickup',
+                prompt: lang === 'hi'
+                  ? 'कल के लिए ई-वेस्ट पिकअप बुक करो'
+                  : lang === 'mr'
+                    ? 'उद्यासाठी ई-कचरा पिकअप बुक करा'
+                    : 'Book an e-waste pickup for tomorrow'
+              },
+              {
+                icon: '🌱',
+                label: lang === 'hi' ? 'मेरा असर' : lang === 'mr' ? 'माझा परिणाम' : 'My Impact',
+                prompt: lang === 'hi' ? 'मेरा अब तक का असर बताओ' : lang === 'mr' ? 'माझा आतापर्यंतचा परिणाम सांगा' : 'What is my impact so far?'
+              }
             ].map((chip, idx) => (
               <button
                 key={idx}
@@ -457,6 +436,9 @@ export default function VoiceModal() {
                 <div style={{ fontSize: '0.88rem', lineHeight: 1.45, fontWeight: 500 }}>
                   {msg.text}
                 </div>
+
+                {msg.sender === 'ai' && <AgentSteps steps={msg.steps} lang={lang} />}
+
                 <div style={{
                   fontSize: '0.68rem',
                   opacity: 0.75,
@@ -483,13 +465,26 @@ export default function VoiceModal() {
                 gap: '8px'
               }}>
                 <RefreshCw className="animate-spin" size={16} color="#3B82F6" />
-                AI Assistant processing & synthesizing speech...
+                {lang === 'hi'
+                  ? 'लाइव डेटा जांच रहा हूँ...'
+                  : lang === 'mr'
+                    ? 'थेट डेटा तपासत आहे...'
+                    : 'Checking live data & running the model...'}
               </div>
             </div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
+
+        {/* The agent reads freely but never writes to the account without a tap. */}
+        <AgentConfirm
+          action={pendingAction}
+          lang={lang}
+          busy={isAiProcessing}
+          onApprove={handleApproveAction}
+          onDecline={decline}
+        />
 
         {/* Input Controls Footer (Text as Visually Secondary) */}
         <div style={{
