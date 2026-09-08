@@ -61,7 +61,7 @@ function MainAppContent() {
     return (
       <ErrorBoundary onReset={() => setOnboardingStage('login')}>
         <LoginScreen onLoginSuccess={(mobile) => {
-          const formattedMobile = mobile ? `+91 ${mobile.slice(-10)}` : '+91 9871234567';
+          const formattedMobile = mobile ? `+91 ${mobile.slice(-10)}` : 'Enter the mobile number';
           localStorage.setItem('ecobridge_verified_mobile', formattedMobile);
           localStorage.setItem('kabadiwala_verified_mobile', formattedMobile);
           if (!localStorage.getItem('ecobridge_auth_token')) {
