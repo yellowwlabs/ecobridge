@@ -1,0 +1,73 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Download your repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # 3. Install pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # 4. Install Java for Android/Gradle
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      # 5. Install JavaScript dependencies
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 6. Build frontend
+      - name: Build frontend
+        run: pnpm build
+
+      # 7. Install Capacitor CLI
+      - name: Install Capacitor CLI
+        run: pnpm exec cap sync android
+
+      # 8. Build Android APK
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      # 9. Upload APK to GitHub Actions
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EcoBridge-APK
+          path: android/app/build/outputs/apk/release/*.apk
+
+      # 10. Create GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
